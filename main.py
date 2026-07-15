@@ -29,12 +29,19 @@ API_PASSPHRASE = os.environ.get("API_PASSPHRASE")
 TOKEN = "8945361217:AAGEDXJq81j4HHgyw1RixJCv8LSKX_wZCqE"
 CHAT_ID = "1211460026"
 
-MONEDAS_A_MONITOREAR = [
-    'DOGEUSDTM', 'SOLUSDTM', 'PEPEUSDTM', 'SHIBUSDTM', 
-    'WIFUSDTM', 'BONKUSDTM', 'XRPUSDTM', 'ADAUSDTM',
-    'ETHUSDTM', 'XBTUSDTM', 'AVAXUSDTM', 'NEARUSDTM'
-]
+def obtener_monedas_dinamicas():
+    try:
+        url = "https://api-futures.kucoin.com/api/v1/contracts/active"
+        respuesta = requests.get(url).json()
+        if respuesta["code"] == "200000":
+            # Filtramos solo los pares USDTM
+            return [c["symbol"] for c in respuesta["data"] if c["symbol"].endswith("USDTM")]
+    except Exception as e:
+        print(f"Error al obtener monedas: {e}")
+    return []
 
+# Inicializamos lista dinámica
+MONEDAS_A_MONITOREAR = obtener_monedas_dinamicas()
 HISTORIALES = {coin: [] for coin in MONEDAS_A_MONITOREAR}
 
 # ==========================================================
@@ -56,7 +63,6 @@ def calcular_rsi(precios, periodo=14):
     return 100 - (100 / (1.0 + rs))
 
 def crear_senal(rsi):
-    # Configuración optimizada: SL 5% y 2 Targets (5% y 10%)
     if rsi < 30:
         return "LONG", 0.05, [0.05, 0.10]
     elif rsi > 70:
@@ -69,7 +75,7 @@ def crear_senal(rsi):
 hilo_web = threading.Thread(target=iniciar_servidor_web, daemon=True)
 hilo_web.start()
 
-print("🚀 Bot iniciado correctamente.")
+print(f"🚀 Bot iniciado con {len(MONEDAS_A_MONITOREAR)} monedas.")
 
 while True:
     for coin in MONEDAS_A_MONITOREAR:
@@ -81,15 +87,13 @@ while True:
                 if len(HISTORIALES[coin]) > 30: HISTORIALES[coin].pop(0)
                 
                 rsi = calcular_rsi(HISTORIALES[coin])
-                print(f"Moneda: {coin} | Precio: {precio} | RSI: {rsi}")
                 
                 if rsi is not None:
                     direccion, sl, tp = crear_senal(rsi)
                     if direccion:
                         mensaje = f"📈 Señal detectada: {coin}\nDirección: {direccion}\nRSI: {rsi:.2f}\nStop Loss: {sl*100}%\nTargets: {tp}"
                         enviar_telegram(mensaje)
-                        # Aquí añadirías tu lógica de ejecución en KuCoin
         except Exception as e:
-            print(f"Error procesando {coin}: {e}")
+            pass # Silenciamos errores de red para no saturar los logs
     
-    time.sleep(15)
+    time.sleep(20) # Aumentado a 20s para evitar bloqueos de API
