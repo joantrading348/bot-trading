@@ -26,15 +26,6 @@ def iniciar_servidor_web():
     servidor.serve_forever()
 
 # ==========================================================
-# ⚙️ CONFIGURACIÓN DE PROXY (Para saltar bloqueo de EE.UU. en Render)
-# ==========================================================
-# REEMPLAZA ESTOS DATOS con tu proveedor de proxy (ej. Webshare, Smartproxy, etc.)
-PROXIES = {
-    "http": "http://usuario:contraseña@ip_del_proxy:puerto",
-    "https": "http://usuario:contraseña@ip_del_proxy:puerto"
-}
-
-# ==========================================================
 # 🔐 CREDENCIALES DESDE VARIABLES DE ENTORNO DE RENDER
 # ==========================================================
 API_KEY = os.environ.get("KC-API-KEY")
@@ -131,7 +122,7 @@ def crear_senal(coin, direccion, precio):
     return msg, stop_loss, targets[0]
 
 # ==========================================================
-# 🔌 CONEXIÓN DIRECTA CON API FUTUROS DE KUCOIN
+# 🔌 CONEXIÓN DIRECTA CON API FUTUROS DE KUCOIN (Sin Proxy)
 # ==========================================================
 def kucoin_api_request(endpoint, method="POST", payload=None):
     base_url = "https://api-futures.kucoin.com"
@@ -160,9 +151,9 @@ def kucoin_api_request(endpoint, method="POST", payload=None):
     }
     
     if method == "POST":
-        response = requests.post(url, headers=headers, data=body, proxies=PROXIES)
+        response = requests.post(url, headers=headers, data=body)
     else:
-        response = requests.get(url, headers=headers, proxies=PROXIES)
+        response = requests.get(url, headers=headers)
         
     return response.json()
 
@@ -188,7 +179,7 @@ def obtener_detalles_contrato(coin):
     
     for symbol in intentos_simbolos:
         try:
-            res = requests.get(f"https://api-futures.kucoin.com/api/v1/contracts/{symbol}", proxies=PROXIES).json()
+            res = requests.get(f"https://api-futures.kucoin.com/api/v1/contracts/{symbol}").json()
             if res.get("code") == "200000" and "data" in res:
                 multiplier = float(res['data']['multiplier'])
                 CONTRATOS_VALIDOS[coin] = (symbol, multiplier)
@@ -302,10 +293,10 @@ print("🚀 Bot iniciado correctamente.")
 while True:
     for coin in MONEDAS_A_MONITOREAR:
         try:
-            # Obtener precio directamente usando endpoints de Futuros y el Proxy
+            # Obtener precio directamente usando endpoints de Futuros (Sin Proxy)
             symbol_detalles, _ = obtener_detalles_contrato(coin)
             url_ticker = f"https://api-futures.kucoin.com/api/v1/ticker?symbol={symbol_detalles}"
-            ticker_res = requests.get(url_ticker, proxies=PROXIES).json()
+            ticker_res = requests.get(url_ticker).json()
             
             if ticker_res.get("code") == "200000" and "data" in ticker_res:
                 precio = float(ticker_res['data']['price'])
