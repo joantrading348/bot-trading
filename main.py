@@ -5,13 +5,30 @@ import hmac
 import hashlib
 import json
 import base64
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+# ==========================================================
+# 🌍 MINI SERVIDOR WEB PARA ENGAÑAR A RENDER (Evita el error de puertos)
+# ==========================================================
+class DummyServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain; charset=utf-8")
+        self.end_headers()
+        self.wfile.write("Bot de trading ejecutándose correctamente...".encode("utf-8"))
+
+def iniciar_servidor_web():
+    # Render asigna automáticamente un puerto en la variable de entorno PORT
+    puerto = int(os.environ.get("PORT", 10000))
+    servidor = HTTPServer(("0.0.0.0", puerto), DummyServer)
+    print(f"🌍 Servidor web dummy iniciado en el puerto {puerto}")
+    servidor.serve_forever()
 
 # ==========================================================
 # ⚙️ CONFIGURACIÓN DE PROXY (Para saltar bloqueo de EE.UU. en Render)
 # ==========================================================
 # REEMPLAZA ESTOS DATOS con tu proveedor de proxy (ej. Webshare, Smartproxy, etc.)
-# Si no usas proxy, puedes dejar este diccionario vacío (PROXIES = {}), 
-# pero recuerda que Render (EE.UU.) te dará error de geobloqueo.
 PROXIES = {
     "http": "http://usuario:contraseña@ip_del_proxy:puerto",
     "https": "http://usuario:contraseña@ip_del_proxy:puerto"
@@ -275,6 +292,11 @@ def ejecutar_orden_futuros(coin, direccion, entry_price, sl_price, tp_price):
 # ==========================================================
 # 🔄 BUCLE PRINCIPAL (ALERTAS + CONTROL DE MARGEN)
 # ==========================================================
+
+# 1. Iniciamos el servidor web dummy en un hilo separado
+hilo_web = threading.Thread(target=iniciar_servidor_web, daemon=True)
+hilo_web.start()
+
 print("🚀 Bot iniciado correctamente.")
 
 while True:
