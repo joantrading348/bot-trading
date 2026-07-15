@@ -34,7 +34,6 @@ def obtener_monedas_dinamicas():
         url = "https://api-futures.kucoin.com/api/v1/contracts/active"
         respuesta = requests.get(url).json()
         if respuesta["code"] == "200000":
-            # Filtramos solo los pares USDTM
             return [c["symbol"] for c in respuesta["data"] if c["symbol"].endswith("USDTM")]
     except Exception as e:
         print(f"Error al obtener monedas: {e}")
@@ -62,11 +61,18 @@ def calcular_rsi(precios, periodo=14):
     rs = (subidas/periodo) / (bajadas/periodo)
     return 100 - (100 / (1.0 + rs))
 
-def crear_senal(rsi):
+def crear_senal(rsi, precio_actual):
+    sl_porcentaje = 0.05
+    tp_porcentaje = 0.05
+    
     if rsi < 30:
-        return "LONG", 0.05, [0.05, 0.10]
+        tp = precio_actual * (1 + tp_porcentaje)
+        sl = precio_actual * (1 - sl_porcentaje)
+        return "LONG", sl, tp
     elif rsi > 70:
-        return "SHORT", 0.05, [0.05, 0.10]
+        tp = precio_actual * (1 - tp_porcentaje)
+        sl = precio_actual * (1 + sl_porcentaje)
+        return "SHORT", sl, tp
     return None, None, None
 
 # ==========================================================
@@ -89,11 +95,15 @@ while True:
                 rsi = calcular_rsi(HISTORIALES[coin])
                 
                 if rsi is not None:
-                    direccion, sl, tp = crear_senal(rsi)
+                    direccion, sl, tp = crear_senal(rsi, precio)
                     if direccion:
-                        mensaje = f"📈 Señal detectada: {coin}\nDirección: {direccion}\nRSI: {rsi:.2f}\nStop Loss: {sl*100}%\nTargets: {tp}"
+                        mensaje = (f"📈 Señal detectada: {coin}\n"
+                                   f"Dirección: {direccion}\n"
+                                   f"RSI: {rsi:.2f}\n"
+                                   f"Stop Loss: {sl:.4f}\n"
+                                   f"Take Profit: {tp:.4f}")
                         enviar_telegram(mensaje)
         except Exception as e:
-            pass # Silenciamos errores de red para no saturar los logs
+            pass 
     
-    time.sleep(20) # Aumentado a 20s para evitar bloqueos de API
+    time.sleep(20)
