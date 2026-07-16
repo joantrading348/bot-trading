@@ -14,7 +14,6 @@ class DummyServer(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write("Bot de trading activo...".encode("utf-8"))
 
-    # Solución para el error de UptimeRobot
     def do_HEAD(self):
         self.send_response(200)
         self.end_headers()
@@ -27,10 +26,6 @@ def iniciar_servidor_web():
 # ==========================================================
 # 🔐 CONFIGURACIONES
 # ==========================================================
-API_KEY = os.environ.get("KC-API-KEY")
-API_SECRET = os.environ.get("API_SECRET")
-API_PASSPHRASE = os.environ.get("API_PASSPHRASE")
-
 TOKEN = "8945361217:AAGEDXJq81j4HHgyw1RixJCv8LSKX_wZCqE"
 CHAT_ID = "1211460026"
 
@@ -44,10 +39,8 @@ def obtener_monedas_dinamicas():
         print(f"Error al obtener monedas: {e}")
     return []
 
-# Inicializamos lista dinámica
 MONEDAS_A_MONITOREAR = obtener_monedas_dinamicas()
 HISTORIALES = {coin: [] for coin in MONEDAS_A_MONITOREAR}
-# Control de alertas: 3600 segundos = 1 hora
 ultima_alerta = {coin: 0 for coin in MONEDAS_A_MONITOREAR}
 TIEMPO_ESPERA = 3600 
 
@@ -72,7 +65,6 @@ def calcular_rsi(precios, periodo=14):
 def crear_senal(rsi, precio_actual):
     sl_porcentaje = 0.05
     tp_porcentaje = 0.05
-    
     if rsi < 30:
         tp = precio_actual * (1 + tp_porcentaje)
         sl = precio_actual * (1 - sl_porcentaje)
@@ -92,6 +84,8 @@ hilo_web.start()
 print(f"🚀 Bot iniciado con {len(MONEDAS_A_MONITOREAR)} monedas.")
 
 while True:
+    mensajes_ciclo = []
+    
     for coin in MONEDAS_A_MONITOREAR:
         try:
             ticker = requests.get(f"https://api-futures.kucoin.com/api/v1/ticker?symbol={coin}").json()
@@ -104,19 +98,15 @@ while True:
                 
                 if rsi is not None:
                     direccion, sl, tp = crear_senal(rsi, precio)
-                    if direccion:
-                        # Filtro de tiempo por moneda
-                        if time.time() - ultima_alerta[coin] > TIEMPO_ESPERA:
-                            mensaje = (f"📩 Pair: {coin}\n"
-                                       f"📉 {direccion} 🔴 Direction: {direccion}\n"
-                                       f"💯 RSI: {rsi:.2f}\n\n"
-                                       f"📊 Entry: {precio:.8f}\n"
-                                       f"❗ Enter as soonest possible ❗\n\n"
-                                       f"✅ Take Profit: {tp:.4f}\n"
-                                       f"⛔ Stop Loss: {sl:.4f}")
-                            enviar_telegram(mensaje)
-                            ultima_alerta[coin] = time.time()
-        except Exception as e:
+                    if direccion and (time.time() - ultima_alerta[coin] > TIEMPO_ESPERA):
+                        info = f"📩 {coin} | {direccion} | RSI: {rsi:.2f} | Entry: {precio:.6f}"
+                        mensajes_ciclo.append(info)
+                        ultima_alerta[coin] = time.time()
+        except Exception:
             pass 
+    
+    if mensajes_ciclo:
+        mensaje_final = "🚨 **Señales detectadas:**\n\n" + "\n".join(mensajes_ciclo)
+        enviar_telegram(mensaje_final)
     
     time.sleep(20)
