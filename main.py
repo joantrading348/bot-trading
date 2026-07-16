@@ -45,12 +45,13 @@ ultima_alerta = {coin: 0 for coin in MONEDAS_A_MONITOREAR}
 TIEMPO_ESPERA = 3600 
 
 # ==========================================================
-# 🛠 FUNCIONES DE LÓGICA
+# 🛠 FUNCIONES DE LÓGICA (ACTUALIZADO)
 # ==========================================================
 def enviar_telegram(mensaje):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     try:
-        requests.get(url, params={"chat_id": CHAT_ID, "text": mensaje})
+        # Usamos parse_mode Markdown para mejor formato
+        requests.get(url, params={"chat_id": CHAT_ID, "text": mensaje, "parse_mode": "Markdown"})
     except Exception as e:
         print(f"Error enviando mensaje: {e}")
 
@@ -63,20 +64,22 @@ def calcular_rsi(precios, periodo=14):
     return 100 - (100 / (1.0 + rs))
 
 def crear_senal(rsi, precio_actual):
-    sl_porcentaje = 0.05
-    tp_porcentaje = 0.05
-    if rsi < 30:
-        tp = precio_actual * (1 + tp_porcentaje)
+    # Configuración optimizada para cuenta pequeña (3 Targets)
+    targets = [0.005, 0.010, 0.015] # 0.5%, 1.0%, 1.5%
+    sl_porcentaje = 0.02 # Stop Loss de 2%
+    
+    if rsi < 30: # LONG
+        tp_precios = [precio_actual * (1 + t) for t in targets]
         sl = precio_actual * (1 - sl_porcentaje)
-        return "LONG", sl, tp
-    elif rsi > 70:
-        tp = precio_actual * (1 - tp_porcentaje)
+        return "LONG", sl, tp_precios
+    elif rsi > 70: # SHORT
+        tp_precios = [precio_actual * (1 - t) for t in targets]
         sl = precio_actual * (1 + sl_porcentaje)
-        return "SHORT", sl, tp
+        return "SHORT", sl, tp_precios
     return None, None, None
 
 # ==========================================================
-# 🚀 EJECUCIÓN PRINCIPAL
+# 🚀 EJECUCIÓN PRINCIPAL (CON AGRUPACIÓN)
 # ==========================================================
 hilo_web = threading.Thread(target=iniciar_servidor_web, daemon=True)
 hilo_web.start()
@@ -97,16 +100,21 @@ while True:
                 rsi = calcular_rsi(HISTORIALES[coin])
                 
                 if rsi is not None:
-                    direccion, sl, tp = crear_senal(rsi, precio)
+                    direccion, sl, tp_lista = crear_senal(rsi, precio)
                     if direccion and (time.time() - ultima_alerta[coin] > TIEMPO_ESPERA):
-                        info = f"📩 {coin} | {direccion} | RSI: {rsi:.2f} | Entry: {precio:.6f}"
-                        mensajes_ciclo.append(info)
+                        # Formato limpio y profesional
+                        msg = (f"📩 *{coin}* | {direccion}\n"
+                               f"RSI: {rsi:.2f} | Entry: {precio:.5f}\n"
+                               f"✅ T1: {tp_lista[0]:.5f} | T2: {tp_lista[1]:.5f} | T3: {tp_lista[2]:.5f}\n"
+                               f"⛔ SL: {sl:.5f}")
+                        mensajes_ciclo.append(msg)
                         ultima_alerta[coin] = time.time()
         except Exception:
             pass 
     
+    # Enviar resumen único si hay señales
     if mensajes_ciclo:
-        mensaje_final = "🚨 **Señales detectadas:**\n\n" + "\n".join(mensajes_ciclo)
+        mensaje_final = "🚨 *Señales detectadas:*\n\n" + "\n\n".join(mensajes_ciclo)
         enviar_telegram(mensaje_final)
     
     time.sleep(20)
