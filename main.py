@@ -2,7 +2,17 @@ import os
 import requests
 import time
 import threading
+import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
+
+# ==========================================================
+# 🔐 CONFIGURACIONES
+# ==========================================================
+TOKEN = "8945361217:AAGEDXJq81j4HHgyw1RixJCv8LSKX_wZCqE"
+CHAT_ID = "1211460026"
+ARCHIVO_DATOS = "datos_bot.json"
+LIMITE_DIARIO = 3
+TIEMPO_ESPERA = 3600 
 
 # ==========================================================
 # 🌍 SERVIDOR WEB PARA MANTENER EL BOT VIVO
@@ -13,7 +23,6 @@ class DummyServer(BaseHTTPRequestHandler):
         self.send_header("Content-type", "text/plain; charset=utf-8")
         self.end_headers()
         self.wfile.write("Bot de trading activo...".encode("utf-8"))
-
     def do_HEAD(self):
         self.send_response(200)
         self.end_headers()
@@ -24,36 +33,22 @@ def iniciar_servidor_web():
     servidor.serve_forever()
 
 # ==========================================================
-# 🔐 CONFIGURACIONES
+# 🛠 FUNCIONES LÓGICAS
 # ==========================================================
-TOKEN = "8945361217:AAGEDXJq81j4HHgyw1RixJCv8LSKX_wZCqE"
-CHAT_ID = "1211460026"
-
 def obtener_monedas_dinamicas():
     try:
         url = "https://api-futures.kucoin.com/api/v1/contracts/active"
-        respuesta = requests.get(url).json()
+        respuesta = requests.get(url, timeout=10).json()
         if respuesta["code"] == "200000":
             return [c["symbol"] for c in respuesta["data"] if c["symbol"].endswith("USDTM")]
-    except Exception as e:
-        print(f"Error al obtener monedas: {e}")
+    except: return []
     return []
 
-MONEDAS_A_MONITOREAR = obtener_monedas_dinamicas()
-HISTORIALES = {coin: [] for coin in MONEDAS_A_MONITOREAR}
-ultima_alerta = {coin: 0 for coin in MONEDAS_A_MONITOREAR}
-TIEMPO_ESPERA = 3600 
-
-# ==========================================================
-# 🛠 FUNCIONES DE LÓGICA (ACTUALIZADO)
-# ==========================================================
 def enviar_telegram(mensaje):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     try:
-        # Usamos parse_mode Markdown para mejor formato
-        requests.get(url, params={"chat_id": CHAT_ID, "text": mensaje, "parse_mode": "Markdown"})
-    except Exception as e:
-        print(f"Error enviando mensaje: {e}")
+        requests.get(url, params={"chat_id": CHAT_ID, "text": mensaje, "parse_mode": "Markdown"}, timeout=5)
+    except: pass
 
 def calcular_rsi(precios, periodo=14):
     if len(precios) < periodo + 1: return None
@@ -64,57 +59,53 @@ def calcular_rsi(precios, periodo=14):
     return 100 - (100 / (1.0 + rs))
 
 def crear_senal(rsi, precio_actual):
-    # Configuración optimizada para cuenta pequeña (3 Targets)
-    targets = [0.005, 0.010, 0.015] # 0.5%, 1.0%, 1.5%
-    sl_porcentaje = 0.02 # Stop Loss de 2%
-    
-    if rsi < 30: # LONG
-        tp_precios = [precio_actual * (1 + t) for t in targets]
-        sl = precio_actual * (1 - sl_porcentaje)
-        return "LONG", sl, tp_precios
-    elif rsi > 70: # SHORT
-        tp_precios = [precio_actual * (1 - t) for t in targets]
-        sl = precio_actual * (1 + sl_porcentaje)
-        return "SHORT", sl, tp_precios
+    targets = [0.005, 0.010, 0.015]
+    sl_porcentaje = 0.02
+    if rsi < 20: # LONG extremo
+        return "LONG", precio_actual * (1 - sl_porcentaje), [precio_actual * (1 + t) for t in targets]
+    elif rsi > 80: # SHORT extremo
+        return "SHORT", precio_actual * (1 + sl_porcentaje), [precio_actual * (1 - t) for t in targets]
     return None, None, None
 
 # ==========================================================
-# 🚀 EJECUCIÓN PRINCIPAL (CON AGRUPACIÓN)
+# 🚀 EJECUCIÓN PRINCIPAL
 # ==========================================================
-hilo_web = threading.Thread(target=iniciar_servidor_web, daemon=True)
-hilo_web.start()
+MONEDAS_A_MONITOREAR = obtener_monedas_dinamicas()
+HISTORIALES = {coin: [] for coin in MONEDAS_A_MONITOREAR}
 
-print(f"🚀 Bot iniciado con {len(MONEDAS_A_MONITOREAR)} monedas.")
+def cargar_datos():
+    if os.path.exists(ARCHIVO_DATOS):
+        with open(ARCHIVO_DATOS, 'r') as f: return json.load(f)
+    return {"ultima_alerta": {c: 0 for c in MONEDAS_A_MONITOREAR}, "contador": 0, "fecha": time.strftime("%Y-%m-%d")}
+
+threading.Thread(target=iniciar_servidor_web, daemon=True).start()
 
 while True:
-    mensajes_ciclo = []
+    datos = cargar_datos()
+    hoy = time.strftime("%Y-%m-%d")
+    if datos["fecha"] != hoy:
+        datos["contador"] = 0
+        datos["fecha"] = hoy
     
-    for coin in MONEDAS_A_MONITOREAR:
-        try:
-            ticker = requests.get(f"https://api-futures.kucoin.com/api/v1/ticker?symbol={coin}").json()
-            if ticker.get("code") == "200000":
-                precio = float(ticker['data']['price'])
-                HISTORIALES[coin].append(precio)
-                if len(HISTORIALES[coin]) > 30: HISTORIALES[coin].pop(0)
-                
-                rsi = calcular_rsi(HISTORIALES[coin])
-                
-                if rsi is not None:
-                    direccion, sl, tp_lista = crear_senal(rsi, precio)
-                    if direccion and (time.time() - ultima_alerta[coin] > TIEMPO_ESPERA):
-                        # Formato limpio y profesional
-                        msg = (f"📩 *{coin}* | {direccion}\n"
-                               f"RSI: {rsi:.2f} | Entry: {precio:.5f}\n"
-                               f"✅ T1: {tp_lista[0]:.5f} | T2: {tp_lista[1]:.5f} | T3: {tp_lista[2]:.5f}\n"
-                               f"⛔ SL: {sl:.5f}")
-                        mensajes_ciclo.append(msg)
-                        ultima_alerta[coin] = time.time()
-        except Exception:
-            pass 
-    
-    # Enviar resumen único si hay señales
-    if mensajes_ciclo:
-        mensaje_final = "🚨 *Señales detectadas:*\n\n" + "\n\n".join(mensajes_ciclo)
-        enviar_telegram(mensaje_final)
-    
-    time.sleep(20)
+    if datos["contador"] < LIMITE_DIARIO:
+        for coin in MONEDAS_A_MONITOREAR:
+            try:
+                ticker = requests.get(f"https://api-futures.kucoin.com/api/v1/ticker?symbol={coin}", timeout=5).json()
+                if ticker.get("code") == "200000" and ticker.get("data"):
+                    precio = float(ticker['data']['price'])
+                    HISTORIALES[coin].append(precio)
+                    if len(HISTORIALES[coin]) > 30: HISTORIALES[coin].pop(0)
+                    
+                    if len(HISTORIALES[coin]) >= 30:
+                        rsi = calcular_rsi(HISTORIALES[coin])
+                        if rsi is not None and (rsi < 20 or rsi > 80):
+                            direccion, sl, tp_lista = crear_senal(rsi, precio)
+                            if direccion and (time.time() - datos["ultima_alerta"].get(coin, 0) > TIEMPO_ESPERA):
+                                msg = f"🌟 *Señal Premium*\n*{coin}* | {direccion}\nEntry: {precio:.5f}\n✅ T1: {tp_lista[0]:.5f}\n⛔ SL: {sl:.5f}"
+                                enviar_telegram(msg)
+                                datos["ultima_alerta"][coin] = time.time()
+                                datos["contador"] += 1
+                                with open(ARCHIVO_DATOS, 'w') as f: json.dump(datos, f)
+                                if datos["contador"] >= LIMITE_DIARIO: break
+            except: continue
+    time.sleep(60)
