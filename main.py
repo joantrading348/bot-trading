@@ -107,11 +107,13 @@ while True:
                     if direccion:
                         # Filtro de tiempo por moneda
                         if time.time() - ultima_alerta[coin] > TIEMPO_ESPERA:
-                            mensaje = (f"📈 Señal detectada: {coin}\n"
-                                       f"Dirección: {direccion}\n"
-                                       f"RSI: {rsi:.2f}\n"
-                                       f"Stop Loss: {sl:.4f}\n"
-                                       f"Take Profit: {tp:.4f}")
+                            mensaje = (f"📩 Pair: {coin}\n"
+                                       f"📉 {direccion} 🔴 Direction: {direccion}\n"
+                                       f"💯 RSI: {rsi:.2f}\n\n"
+                                       f"📊 Entry: {precio:.8f}\n"
+                                       f"❗ Enter as soonest possible ❗\n\n"
+                                       f"✅ Take Profit: {tp:.4f}\n"
+                                       f"⛔ Stop Loss: {sl:.4f}")
                             enviar_telegram(mensaje)
                             ultima_alerta[coin] = time.time()
         except Exception as e:
