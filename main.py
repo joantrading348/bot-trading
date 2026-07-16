@@ -14,6 +14,11 @@ class DummyServer(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write("Bot de trading activo...".encode("utf-8"))
 
+    # Solución para el error de UptimeRobot
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
+
 def iniciar_servidor_web():
     puerto = int(os.environ.get("PORT", 10000))
     servidor = HTTPServer(("0.0.0.0", puerto), DummyServer)
@@ -42,6 +47,9 @@ def obtener_monedas_dinamicas():
 # Inicializamos lista dinámica
 MONEDAS_A_MONITOREAR = obtener_monedas_dinamicas()
 HISTORIALES = {coin: [] for coin in MONEDAS_A_MONITOREAR}
+# Control de alertas: 3600 segundos = 1 hora
+ultima_alerta = {coin: 0 for coin in MONEDAS_A_MONITOREAR}
+TIEMPO_ESPERA = 3600 
 
 # ==========================================================
 # 🛠 FUNCIONES DE LÓGICA
@@ -97,12 +105,15 @@ while True:
                 if rsi is not None:
                     direccion, sl, tp = crear_senal(rsi, precio)
                     if direccion:
-                        mensaje = (f"📈 Señal detectada: {coin}\n"
-                                   f"Dirección: {direccion}\n"
-                                   f"RSI: {rsi:.2f}\n"
-                                   f"Stop Loss: {sl:.4f}\n"
-                                   f"Take Profit: {tp:.4f}")
-                        enviar_telegram(mensaje)
+                        # Filtro de tiempo por moneda
+                        if time.time() - ultima_alerta[coin] > TIEMPO_ESPERA:
+                            mensaje = (f"📈 Señal detectada: {coin}\n"
+                                       f"Dirección: {direccion}\n"
+                                       f"RSI: {rsi:.2f}\n"
+                                       f"Stop Loss: {sl:.4f}\n"
+                                       f"Take Profit: {tp:.4f}")
+                            enviar_telegram(mensaje)
+                            ultima_alerta[coin] = time.time()
         except Exception as e:
             pass 
     
